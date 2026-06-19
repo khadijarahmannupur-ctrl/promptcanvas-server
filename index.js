@@ -35,6 +35,19 @@ async function run() {
         const promptsCollection = database.collection("prompts");
 
         // prompts related apis
+        app.get('/api/prompts', async(req, res)=> {
+            const query = {};
+            if(req.query.creatorId){
+                query.creatorId = req.query.creatorId;
+            }
+            if(req.query.status){
+                query.status = req.query.status;
+            }
+            const cursor = promptsCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
+        })
+
         app.post('/api/prompts', async(req, res)=> {
             const prompt = req.body;
             const result = await promptsCollection.insertOne(prompt);
