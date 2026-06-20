@@ -3,7 +3,7 @@ const cors = require('cors');
 const app = express();
 const port = 5000;
 const dotenv = require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 app.use(cors());
 app.use(express.json());
@@ -36,19 +36,19 @@ async function run() {
         const usersCollection = database.collection('user');
 
         // user related apis
-        app.get('/api/users', async(req, res)=> {
-           const cursor = usersCollection.find().skip(3);
-           const result = await cursor.toArray();
-           res.send(result);
+        app.get('/api/users', async (req, res) => {
+            const cursor = usersCollection.find().skip(3);
+            const result = await cursor.toArray();
+            res.send(result);
         })
 
         // prompts related apis
-        app.get('/api/prompts', async(req, res)=> {
+        app.get('/api/prompts', async (req, res) => {
             const query = {};
-            if(req.query.creatorId){
+            if (req.query.creatorId) {
                 query.creatorId = req.query.creatorId;
             }
-            if(req.query.status){
+            if (req.query.status) {
                 query.status = req.query.status;
             }
             const cursor = promptsCollection.find(query);
@@ -56,15 +56,29 @@ async function run() {
             res.send(result);
         })
 
-        app.post('/api/prompts', async(req, res)=> {
+        app.get("/api/prompts/featured", async (req, res) => {
+            const result = await promptsCollection.find({ status: "approved" }).limit(6).toArray();
+            res.send(result);
+        });
+
+        app.get('/api/prompts/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = {
+                _id: new ObjectId(id)
+            }
+            const result = await promptsCollection.findOne(query);
+            res.send(result);
+        })
+
+        app.post('/api/prompts', async (req, res) => {
             const prompt = req.body;
             const newPrompt = {
                 ...prompt,
-                createdAt : new Date(),
+                createdAt: new Date(),
             }
             const result = await promptsCollection.insertOne(newPrompt);
             res.send(result);
-        }) 
+        })
 
 
         // Send a ping to confirm a successful connection
