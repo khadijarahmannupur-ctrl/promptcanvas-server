@@ -33,6 +33,14 @@ async function run() {
 
         const database = client.db("PromptCanvas_db");
         const promptsCollection = database.collection("prompts");
+        const usersCollection = database.collection('user');
+
+        // user related apis
+        app.get('/api/users', async(req, res)=> {
+           const cursor = usersCollection.find().skip(3);
+           const result = await cursor.toArray();
+           res.send(result);
+        })
 
         // prompts related apis
         app.get('/api/prompts', async(req, res)=> {
@@ -50,7 +58,11 @@ async function run() {
 
         app.post('/api/prompts', async(req, res)=> {
             const prompt = req.body;
-            const result = await promptsCollection.insertOne(prompt);
+            const newPrompt = {
+                ...prompt,
+                createdAt : new Date(),
+            }
+            const result = await promptsCollection.insertOne(newPrompt);
             res.send(result);
         }) 
 
