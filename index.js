@@ -219,6 +219,28 @@ async function run() {
         });
 
 
+        // copy related apis
+        app.patch("/api/prompts/copy/:id", async (req, res) => {
+
+            const id = req.params.id;
+            // console.log(id)
+
+            const result = await promptsCollection.updateOne(
+                {
+                    _id: new ObjectId(id)
+                },
+                {
+                    $inc: {
+                        copyCount: 1
+                    }
+                }
+            );
+
+            res.send(result);
+
+        });
+
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
