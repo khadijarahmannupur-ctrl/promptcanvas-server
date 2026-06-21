@@ -34,6 +34,10 @@ async function run() {
         const database = client.db("PromptCanvas_db");
         const promptsCollection = database.collection("prompts");
         const usersCollection = database.collection('user');
+        const bookmarksCollection = database.collection('bookmarks');
+        const reviewsCollection = database.collection('reviews');
+        const reportsCollection = database.collection('reports');
+        const subscriptionsCollection = database.collection('subscriptions');
 
         // user related apis
         app.get('/api/users', async (req, res) => {
@@ -79,6 +83,126 @@ async function run() {
             const result = await promptsCollection.insertOne(newPrompt);
             res.send(result);
         })
+
+        // bookmark related apis
+        app.get("/api/bookmarks/check", async (req, res) => {
+
+            const { promptId, userEmail } = req.query;
+
+            const bookmark = await bookmarksCollection.findOne({
+                promptId,
+                userEmail
+            });
+
+            res.send({
+                bookmarked: !!bookmark
+            });
+
+        });
+
+        app.get("/api/bookmarks", async (req, res) => {
+
+            const { userEmail } = req.query;
+
+            const result = await bookmarksCollection.find({
+                userEmail
+            }).toArray();
+
+            res.send(result);
+
+        });
+
+        app.post("/api/bookmarks", async (req, res) => {
+
+            const bookmark = req.body;
+
+            const existing = await bookmarksCollection.findOne({
+                promptId: bookmark.promptId,
+                userEmail: bookmark.userEmail
+            });
+
+            if (existing) {
+                return res.status(400).send({
+                    message: "Already Bookmarked"
+                });
+            }
+
+            bookmark.createdAt = new Date();
+
+            const result = await bookmarksCollection.insertOne(bookmark);
+
+            res.send(result);
+
+        });
+
+        app.delete("/api/bookmarks", async (req, res) => {
+
+            const { promptId, userEmail } = req.body;
+
+            const result = await bookmarksCollection.deleteOne({
+                promptId,
+                userEmail
+            });
+
+            res.send(result);
+
+        });
+
+
+        // reviews related apis
+        app.get("/api/reviews/:promptId", async (req, res) => {
+
+            const promptId = req.params.promptId;
+
+            const result = await reviewsCollection.find({ promptId }).sort({ createdAt: -1 }).toArray();
+            res.send(result);
+
+        });
+
+        app.get("/api/reviews/rating/:promptId", async (req, res) => {
+
+            const promptId = req.params.promptId;
+
+            const reviews = await reviewsCollection.find({ promptId }).toArray();
+
+            if (reviews.length === 0) {
+                return res.send({
+                    average: 0,
+                    total: 0,
+                });
+            }
+
+            const totalRating = reviews.reduce((sum, item) => sum + Number(item.rating), 0);
+
+            res.send({
+                average: Number((totalRating / reviews.length).toFixed(1)),
+                total: reviews.length,
+            });
+
+        });
+
+        app.post("/api/reviews", async (req, res) => {
+
+            const review = req.body;
+
+            const existing = await reviewsCollection.findOne({
+                promptId: review.promptId,
+                userEmail: review.userEmail,
+            });
+
+            if (existing) {
+                return res.status(400).send({
+                    message: "You already reviewed this prompt",
+                });
+            }
+
+            review.createdAt = new Date();
+
+            const result = await reviewsCollection.insertOne(review);
+
+            res.send(result);
+
+        });
 
 
         // Send a ping to confirm a successful connection
