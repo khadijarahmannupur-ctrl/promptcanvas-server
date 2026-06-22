@@ -150,13 +150,37 @@ async function run() {
 
 
         // reviews related apis
-        app.get("/api/reviews/:promptId", async (req, res) => {
+        app.get("/api/reviews/prompt/:promptId", async (req, res) => {
 
             const promptId = req.params.promptId;
 
             const result = await reviewsCollection.find({ promptId }).sort({ createdAt: -1 }).toArray();
             res.send(result);
 
+        });
+
+        app.get("/api/reviews/user-review", async (req, res) => {
+
+            const { promptId, userId } = req.query;
+
+            const result = await reviewsCollection.findOne({
+                promptId,
+                userId
+            });
+
+            res.send(result);
+
+        });
+
+        app.get("/api/reviews/user/:userId", async (req, res) => {
+            const { userId } = req.params;
+
+            const result = await reviewsCollection
+                .find({ userId })
+                .sort({ createdAt: -1 })
+                .toArray();
+
+            res.send(result);
         });
 
         app.get("/api/reviews/rating/:promptId", async (req, res) => {
