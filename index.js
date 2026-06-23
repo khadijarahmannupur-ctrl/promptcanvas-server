@@ -37,6 +37,7 @@ async function run() {
         const bookmarksCollection = database.collection('bookmarks');
         const reviewsCollection = database.collection('reviews');
         const reportsCollection = database.collection('reports');
+        const paymentCollection = database.collection('payment');
         const subscriptionsCollection = database.collection('subscriptions');
 
         // user related apis
@@ -263,6 +264,37 @@ async function run() {
             res.send(result);
 
         });
+
+        // payment related apis
+        app.get('/api/payments', async(req, res)=> {
+            const query = {};
+            if(req.query.payment_id){
+                query.payment_id = req.query.payment_id;
+            }
+            const payment = await paymentCollection.findOne(query);
+            res.send(payment); 
+        })
+
+        // subscription related apis 
+        app.post('/api/subscriptions', async(req, res)=> {
+            const data = req.body;
+            // console.log(data)
+            const subsInfo = {
+                ...data,
+                createdAt : new Date()
+            }
+            const result = await subscriptionsCollection.insertOne(subsInfo);
+
+            // update user plan
+            const filter = {email : data.email};
+            const updateDocument ={
+                $set: {
+                    plan : data.plan
+                }
+            }
+            const updatedResult = await usersCollection.updateOne(filter, updateDocument);
+            res.send(updatedResult);
+        })
 
 
         // Send a ping to confirm a successful connection
