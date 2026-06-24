@@ -85,20 +85,33 @@ async function run() {
             res.send(result);
         })
 
-        app.patch('/api/prompts/:id', async(req, res)=> {
+        app.patch('/api/prompts/:id', async (req, res) => {
             const id = req.params.id;
             const updatedPrompt = req.body;
-            const filter = {_id : new ObjectId(id)};
+            const filter = { _id: new ObjectId(id) };
             const updatedDoc = {
-                $set : {
-                  status: updatedPrompt.status,
+                $set: {
+                    status: updatedPrompt.status,
                 }
             }
             const result = await promptsCollection.updateOne(filter, updatedDoc);
             res.send(result)
         })
 
-        
+        app.delete('/api/prompts/:id', async (req, res) => {
+
+            const id = req.params.id;
+            // console.log(id)
+
+            const filter = {
+                _id: new ObjectId(id)
+            };
+
+            const result = await promptsCollection.deleteOne(filter);
+
+            res.send(result);
+
+        });
 
         // bookmark related apis
         app.get("/api/bookmarks/check", async (req, res) => {
@@ -281,30 +294,30 @@ async function run() {
         });
 
         // payment related apis
-        app.get('/api/payments', async(req, res)=> {
+        app.get('/api/payments', async (req, res) => {
             const query = {};
-            if(req.query.payment_id){
+            if (req.query.payment_id) {
                 query.payment_id = req.query.payment_id;
             }
             const payment = await paymentCollection.findOne(query);
-            res.send(payment); 
+            res.send(payment);
         })
 
         // subscription related apis 
-        app.post('/api/subscriptions', async(req, res)=> {
+        app.post('/api/subscriptions', async (req, res) => {
             const data = req.body;
             // console.log(data)
             const subsInfo = {
                 ...data,
-                createdAt : new Date()
+                createdAt: new Date()
             }
             const result = await subscriptionsCollection.insertOne(subsInfo);
 
             // update user plan
-            const filter = {email : data.email};
-            const updateDocument ={
+            const filter = { email: data.email };
+            const updateDocument = {
                 $set: {
-                    plan : data.plan
+                    plan: data.plan
                 }
             }
             const updatedResult = await usersCollection.updateOne(filter, updateDocument);
