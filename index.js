@@ -324,6 +324,16 @@ async function run() {
 
 
         // report related apis
+        app.get('/api/reports', async (req, res) => {
+
+            const reports = await reportsCollection.find().sort({
+                createdAt: -1
+            }).toArray();
+
+            res.send(reports);
+
+        });
+
         app.post("/api/reports", async (req, res) => {
 
             const report = req.body;
@@ -331,6 +341,54 @@ async function run() {
             report.createdAt = new Date();
 
             const result = await reportsCollection.insertOne(report);
+
+            res.send(result);
+
+        });
+
+        // app.delete('/api/reports/warn/:id', async (req, res) => {
+
+        //     const id = req.params.id;
+
+        //     const result = await reportsCollection.deleteOne({
+        //         _id: new ObjectId(id)
+        //     });
+
+        //     res.send(result);
+
+        // });
+
+        app.delete('/api/reports/remove-prompt/:id', async (req, res) => {
+
+            const id = req.params.id;
+
+            const report = await reportsCollection.findOne({
+                _id: new ObjectId(id)
+            });
+
+            if (!report) {
+                return res.status(404).send({ message: "Report not found" });
+            }
+
+            await promptsCollection.deleteOne({
+                _id: new ObjectId(report.promptId)
+            });
+
+            const result = await reportsCollection.deleteOne({
+                _id: new ObjectId(id)
+            });
+
+            res.send(result);
+
+        });
+
+        app.delete('/api/reports/dismiss/:id', async (req, res) => {
+
+            const id = req.params.id;
+
+            const result = await reportsCollection.deleteOne({
+                _id: new ObjectId(id)
+            });
 
             res.send(result);
 
