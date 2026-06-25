@@ -61,6 +61,46 @@ async function run() {
             res.send(result);
         })
 
+        app.get("/api/admin/analytics", async (req, res) => {
+            try {
+
+                const totalUsers = await usersCollection.countDocuments();
+
+                const totalPrompts = await promptsCollection.countDocuments();
+
+                const totalReviews = await reviewsCollection.countDocuments();
+
+                const copyResult = await promptsCollection.aggregate([
+                    {
+                        $group: {
+                            _id: null,
+                            totalCopies: {
+                                $sum: "$copyCount"
+                            }
+                        }
+                    }
+                ]).toArray();
+
+                const totalCopies = copyResult[0]?.totalCopies || 0;
+
+                res.send({
+                    totalUsers,
+                    totalPrompts,
+                    totalReviews,
+                    totalCopies,
+                });
+
+            } catch (error) {
+
+                console.log(error);
+
+                res.status(500).send({
+                    message: "Failed to load analytics"
+                });
+
+            }
+        });
+
         app.get("/api/prompts/featured", async (req, res) => {
             const result = await promptsCollection.find({ status: "approved" }).limit(6).toArray();
             res.send(result);
@@ -323,6 +363,8 @@ async function run() {
             const updatedResult = await usersCollection.updateOne(filter, updateDocument);
             res.send(updatedResult);
         })
+
+
 
 
         // Send a ping to confirm a successful connection
