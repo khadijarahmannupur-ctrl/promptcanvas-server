@@ -47,6 +47,31 @@ async function run() {
             res.send(result);
         })
 
+        app.delete('/api/users/:id', async (req, res) => {
+
+            try {
+
+                const id = req.params.id;
+
+                const filter = {
+                    _id: new ObjectId(id),
+                };
+
+                const result = await usersCollection.deleteOne(filter);
+
+                res.send(result);
+
+            } catch (error) {
+
+                res.status(500).send({
+                    success: false,
+                    message: error.message,
+                });
+
+            }
+
+        });
+
         // prompts related apis
         app.get('/api/prompts', async (req, res) => {
             const query = {};
