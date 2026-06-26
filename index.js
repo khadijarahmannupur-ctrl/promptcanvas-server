@@ -39,6 +39,67 @@ async function run() {
         const reportsCollection = database.collection('reports');
         const paymentCollection = database.collection('payment');
         const subscriptionsCollection = database.collection('subscriptions');
+        const sessionCollection = database.collection('session');
+
+
+        // verification
+        const verifyToken = async (req, res, next) => {
+
+            const authHeader = req.headers?.authorization;
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const token = authHeader.split(' ')[1]
+
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const query = { token: token }
+            const session = await sessionCollection.findOne(query);
+
+            if (!session) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const userId = session.userId;
+            // console.log(userId)
+
+            const userQuery = {
+                _id: userId
+            }
+
+            const user = await usersCollection.findOne(userQuery);
+            if (!user) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+            req.user = user;
+            next();
+        }
+
+        // must be used after verifyToken middleware
+        const verifyUserOrCreator = (req, res, next) => {
+
+            if (
+                req.user.role !== "user" &&
+                req.user.role !== "creator"
+            ) {
+                return res.status(403).send({
+                    message: "Forbidden access"
+                });
+            }
+
+            next();
+        };
+
+        // must be used after verifyToken middleware
+        const verifyAdmin = async (req, res, next) => {
+            if (req.user.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' })
+            }
+            next();
+        }
 
         // user related apis
         app.get('/api/users', async (req, res) => {
@@ -73,10 +134,86 @@ async function run() {
         });
 
         // prompts related apis
+        //   home all prompt page 
+        // app.get('/api/prompts', async (req, res) => {
+        //     const { page = 1, limit = 10 } = req.query;
+        //     const skip = (Number(page) - 1) * Number(limit);
+
+        //     const result = await promptsCollection
+        //         .find({ status: "approved" }).skip(skip).limit(Number(limit))
+        //         .toArray();
+
+        //     const totalData = await promptsCollection.countDocuments();
+        //     const totalPage = Math.ceil(totalData / Number(limit));
+
+        //     res.send({ data: result, page: Number(page) , totalPage});
+        // });
+
         app.get('/api/prompts', async (req, res) => {
+            try {
+                const {
+                    page = 1,
+                    limit = 9,
+                    search = "",
+                    category,
+                    tool,
+                    difficulty,
+                    sort = "newest",
+                } = req.query;
+
+                // Base query
+                const query = { status: "approved" };
+
+                // Search
+                if (search) {
+                    query.$or = [
+                        { title: { $regex: search, $options: "i" } },
+                        { description: { $regex: search, $options: "i" } },
+                        { tags: { $regex: search, $options: "i" } },
+                        { creatorName: { $regex: search, $options: "i" } },
+                    ];
+                }
+
+                // Filters
+                if (category && category !== "all") query.category = category;
+                if (tool && tool !== "all") query.tool = tool;
+                if (difficulty && difficulty !== "all") query.difficulty = difficulty;
+
+                // Sort
+                let sortOption = { createdAt: -1 };
+                if (sort === "copies") sortOption = { copyCount: -1 };
+                if (sort === "az") sortOption = { title: 1 };
+
+                // Pagination
+                const skip = (Number(page) - 1) * Number(limit);
+                const totalData = await promptsCollection.countDocuments(query); // query দিয়ে count করো!
+                const totalPage = Math.ceil(totalData / Number(limit));
+
+                const result = await promptsCollection
+                    .find(query)
+                    .sort(sortOption)
+                    .skip(skip)
+                    .limit(Number(limit))
+                    .toArray();
+
+                res.send({ data: result, page: Number(page), totalPage });
+
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        // creator prompts
+        app.get('/api/creator/prompts', verifyToken, verifyUserOrCreator, async (req, res) => {
             const query = {};
             if (req.query.creatorId) {
                 query.creatorId = req.query.creatorId;
+
+                // check whether asking for user information or someone else
+                // console.log(req.user, req.query.creatorId)
+                if (req.user._id.toString() !== req.query.creatorId) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
             }
             if (req.query.status) {
                 query.status = req.query.status;
@@ -85,6 +222,15 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         })
+
+        // admin allPrompts page prompt
+        app.get("/api/admin/prompts", verifyToken, verifyAdmin, async (req, res) => {
+
+            const result = await promptsCollection.find().toArray();
+
+            res.send(result);
+        }
+        );
 
         app.get("/api/admin/analytics", async (req, res) => {
             try {
@@ -131,7 +277,7 @@ async function run() {
             res.send(result);
         });
 
-        app.get('/api/prompts/:id', async (req, res) => {
+        app.get('/api/prompts/:id', verifyToken, async (req, res) => {
             const id = req.params.id;
             const query = {
                 _id: new ObjectId(id)
@@ -140,7 +286,56 @@ async function run() {
             res.send(result);
         })
 
-        app.post('/api/prompts', async (req, res) => {
+        // top creator
+        app.get("/api/creators/top", async (req, res) => {
+
+            const result = await promptsCollection.aggregate([
+
+                {
+                    $match: {
+                        status: "approved"
+                    }
+                },
+
+                {
+                    $group: {
+                        _id: "$creatorId",
+
+                        creatorName: {
+                            $first: "$creatorName"
+                        },
+
+                        creatorImage: {
+                            $first: "$creatorImage"
+                        },
+
+                        totalPrompts: {
+                            $sum: 1
+                        },
+
+                        totalCopies: {
+                            $sum: "$copyCount"
+                        }
+                    }
+                },
+
+                {
+                    $sort: {
+                        totalCopies: -1
+                    }
+                },
+
+                {
+                    $limit: 6
+                }
+
+            ]).toArray();
+
+            res.send(result);
+
+        });
+
+        app.post('/api/prompts', verifyToken, verifyUserOrCreator, async (req, res) => {
             const prompt = req.body;
             const newPrompt = {
                 ...prompt,
@@ -150,7 +345,7 @@ async function run() {
             res.send(result);
         })
 
-        app.patch('/api/prompts/:id', async (req, res) => {
+        app.patch('/api/prompts/:id', verifyToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const updatedPrompt = req.body;
             const filter = { _id: new ObjectId(id) };
@@ -163,7 +358,40 @@ async function run() {
             res.send(result)
         })
 
-        app.delete('/api/prompts/:id', async (req, res) => {
+        app.patch("/api/prompts/update/:id", verifyToken, verifyUserOrCreator, async (req, res) => {
+
+            const id = req.params.id;
+            const updatedPrompt = req.body;
+
+            const existingPrompt = await promptsCollection.findOne({
+                _id: new ObjectId(id),
+            });
+
+            if (!existingPrompt) {
+                return res.status(404).send({
+                    message: "Prompt not found",
+                });
+            }
+
+            const updateDoc = {
+                $set: {
+                    title: updatedPrompt.title,
+                    updatedAt: new Date(),
+                },
+            };
+
+            const result = await promptsCollection.updateOne(
+                {
+                    _id: new ObjectId(id),
+                },
+                updateDoc
+            );
+
+            res.send(result);
+        }
+        );
+
+        app.delete('/api/prompts/:id', verifyToken, async (req, res) => {
 
             const id = req.params.id;
             // console.log(id)
@@ -194,7 +422,7 @@ async function run() {
 
         });
 
-        app.get("/api/bookmarks", async (req, res) => {
+        app.get("/api/bookmarks", verifyToken, async (req, res) => {
 
             const { userEmail } = req.query;
 
@@ -244,7 +472,19 @@ async function run() {
 
 
         // reviews related apis
-        app.get("/api/reviews/prompt/:promptId", async (req, res) => {
+        app.get('/api/reviews', async (req, res) => {
+
+            const reviews = await reviewsCollection
+                .find()
+                .sort({ createdAt: -1 })
+                .limit(6)
+                .toArray();
+
+            res.send(reviews);
+
+        });
+
+        app.get("/api/reviews/prompt/:promptId", verifyToken, async (req, res) => {
 
             const promptId = req.params.promptId;
 
@@ -253,7 +493,7 @@ async function run() {
 
         });
 
-        app.get("/api/reviews/user-review", async (req, res) => {
+        app.get("/api/reviews/user-review", verifyToken, async (req, res) => {
 
             const { promptId, userId } = req.query;
 
@@ -266,7 +506,7 @@ async function run() {
 
         });
 
-        app.get("/api/reviews/user/:userId", async (req, res) => {
+        app.get("/api/reviews/user/:userId", verifyToken, async (req, res) => {
             const { userId } = req.params;
 
             const result = await reviewsCollection
@@ -277,7 +517,7 @@ async function run() {
             res.send(result);
         });
 
-        app.get("/api/reviews/rating/:promptId", async (req, res) => {
+        app.get("/api/reviews/rating/:promptId", verifyToken, async (req, res) => {
 
             const promptId = req.params.promptId;
 
@@ -299,7 +539,7 @@ async function run() {
 
         });
 
-        app.post("/api/reviews", async (req, res) => {
+        app.post("/api/reviews", verifyToken, async (req, res) => {
 
             const review = req.body;
 
@@ -324,7 +564,7 @@ async function run() {
 
 
         // report related apis
-        app.get('/api/reports', async (req, res) => {
+        app.get('/api/reports', verifyToken, verifyAdmin, async (req, res) => {
 
             const reports = await reportsCollection.find().sort({
                 createdAt: -1
@@ -334,7 +574,7 @@ async function run() {
 
         });
 
-        app.post("/api/reports", async (req, res) => {
+        app.post("/api/reports", verifyToken, async (req, res) => {
 
             const report = req.body;
 
@@ -358,7 +598,7 @@ async function run() {
 
         // });
 
-        app.delete('/api/reports/remove-prompt/:id', async (req, res) => {
+        app.delete('/api/reports/remove-prompt/:id', verifyToken, verifyAdmin, async (req, res) => {
 
             const id = req.params.id;
 
@@ -382,7 +622,7 @@ async function run() {
 
         });
 
-        app.delete('/api/reports/dismiss/:id', async (req, res) => {
+        app.delete('/api/reports/dismiss/:id', verifyToken, verifyAdmin, async (req, res) => {
 
             const id = req.params.id;
 
@@ -417,7 +657,7 @@ async function run() {
         });
 
         // payment related apis
-        app.get('/api/payments', async (req, res) => {
+        app.get('/api/payments', verifyToken, async (req, res) => {
             const query = {};
             if (req.query.payment_id) {
                 query.payment_id = req.query.payment_id;
@@ -427,7 +667,18 @@ async function run() {
         })
 
         // subscription related apis 
-        app.post('/api/subscriptions', async (req, res) => {
+        app.get('/api/subscriptions', verifyToken, verifyAdmin, async (req, res) => {
+
+            const subscriptions = await subscriptionsCollection
+                .find()
+                .sort({ createdAt: -1 })
+                .toArray();
+
+            res.send(subscriptions);
+
+        });
+
+        app.post('/api/subscriptions', verifyToken, async (req, res) => {
             const data = req.body;
             // console.log(data)
             const subsInfo = {
@@ -447,11 +698,107 @@ async function run() {
             res.send(updatedResult);
         })
 
+        // search related api
+        // app.get("/api/prompts", async (req, res) => {
+        //     console.log("API HIT");
+        //     console.log(req.query);
+        //     try {
+
+        //         const {
+        //             search = "",
+        //             category,
+        //             tool,
+        //             difficulty,
+        //             sort = "newest",
+        //         } = req.query;
+
+        //         const query = {
+        //             status: "approved",
+        //         };
+
+
+        //         // Search
+        //         if (search) {
+        //             query.$or = [
+        //                 {
+        //                     title: {
+        //                         $regex: search,
+        //                         $options: "i",
+        //                     },
+        //                 },
+        //                 {
+        //                     description: {
+        //                         $regex: search,
+        //                         $options: "i",
+        //                     },
+        //                 },
+        //                 {
+        //                     tags: {
+        //                         $regex: search,
+        //                         $options: "i",
+        //                     },
+        //                 },
+        //                 {
+        //                     creatorName: {
+        //                         $regex: search,
+        //                         $options: "i",
+        //                     },
+        //                 },
+        //             ];
+        //         }
+
+        //         // Category
+        //         if (category && category !== "all") {
+        //             query.category = category;
+        //         }
+
+        //         // Tool
+        //         if (tool && tool !== "all") {
+        //             query.tool = tool;
+        //         }
+
+        //         // Difficulty
+        //         if (difficulty && difficulty !== "all") {
+        //             query.difficulty = difficulty;
+        //         }
+
+        //         let sortOption = {
+        //             createdAt: -1,
+        //         };
+
+        //         if (sort === "copies") {
+        //             sortOption = {
+        //                 copyCount: -1,
+        //             };
+        //         }
+
+        //         if (sort === "az") {
+        //             sortOption = {
+        //                 title: 1,
+        //             };
+        //         }
+
+        //         const result = await promptsCollection
+        //             .find(query)
+        //             .sort(sortOption)
+        //             .toArray();
+
+        //         res.send(result);
+
+        //     } catch (error) {
+
+        //         res.status(500).send({
+        //             message: error.message,
+        //         });
+
+        //     }
+        // });
+
 
 
 
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
+        // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
